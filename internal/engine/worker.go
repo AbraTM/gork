@@ -11,27 +11,37 @@ import (
 
 type Worker struct {
 	id       int
-	registry job.Registry
+	registry *job.Registry
 	queue    queue.Queue
+}
+
+func NewWorker(id int, r *job.Registry, q queue.Queue) *Worker {
+	return &Worker{
+		id:       id,
+		registry: r,
+		queue:    q,
+	}
 }
 
 func (w *Worker) Start(ctx context.Context) {
 	jobs, err := w.queue.Consume(ctx)
 	if err != nil {
-		fmt.Printf("[worker-%d] faield to consume jobs, shutting down\n", w.id)
+		fmt.Printf("[worker-%d] failed to consume jobs, shutting down\n", w.id)
 		return
 	}
 
-	select {
-	case j, ok := <-jobs:
-		if !ok {
-			fmt.Printf("[worker-%d] queue closed, shutting down\n", w.id)
+	for {
+		select {
+		case j, ok := <-jobs:
+			if !ok {
+				fmt.Printf("[worker-%d] queue closed, shutting down\n", w.id)
+				return
+			}
+			w.process(ctx, j)
+		case <-ctx.Done():
+			fmt.Printf("[worker-%d] context closed, shutting down\n", w.id)
 			return
 		}
-		w.process(ctx, j)
-	case <-ctx.Done():
-		fmt.Printf("[worker-%d] context closed, shutting done\n", w.id)
-		return
 	}
 }
 
@@ -44,7 +54,7 @@ func (w *Worker) process(ctx context.Context, j job.Job) {
 		return
 	}
 
-	if err := handler.Hanlde(ctx, j); err != nil {
+	if err := handler.Handle(ctx, j); err != nil {
 		fmt.Printf("[worker-%d] job %s failed; %v\n", w.id, j.ID, err)
 		return
 	}

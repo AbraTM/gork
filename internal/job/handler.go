@@ -3,5 +3,5 @@ package job
 import "context"
 
 type Handler interface {
-	Hanlde(ctx context.Context, job Job) error
+	Handle(ctx context.Context, job Job) error
 }
