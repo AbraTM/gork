@@ -30,3 +30,7 @@ func (q *InMemoryQueue) Publish(ctx context.Context, j job.Job) error {
 func (q *InMemoryQueue) Consume(ctx context.Context) (<-chan job.Job, error) {
 	return q.jobs, nil
 }
+
+func (q *InMemoryQueue) Len() int {
+	return len(q.jobs)
+}
