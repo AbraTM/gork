@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/AbraTM/gork/internal/job"
-	"github.com/AbraTM/gork/internal/middleware"
 	"github.com/AbraTM/gork/internal/queue"
 )
 
@@ -55,7 +54,7 @@ func (w *Worker) process(ctx context.Context, j job.Job) {
 		return
 	}
 
-	if err := middleware.WithLogging(handler.Handle(ctx, j)); err != nil {
+	if err := handler.Handle(ctx, j); err != nil {
 		fmt.Printf("[worker-%d] job %s failed; %v\n", w.id, j.ID, err)
 		return
 	}
