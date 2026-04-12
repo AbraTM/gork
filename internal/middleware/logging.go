@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/AbraTM/gork/internal/job"
 )
@@ -17,17 +16,10 @@ func WithLogging(next job.Handler) job.Handler {
 }
 
 func (m *loggingMiddleware) Handle(ctx context.Context, j job.Job) error {
-	startTime := time.Now()
-	fmt.Printf("[logging] job=%s type=%s started\n", j.ID, j.Type)
-
+	fmt.Printf("[logging] job=%s type=%s payload=%s started\n", j.ID, j.Type, string(j.Payload))
 	err := m.next.Handle(ctx, j)
-	duration := time.Since(startTime)
-
 	if err != nil {
-		fmt.Printf("[logging] job=%s type=%s failed in %v: %n\n", j.ID, j.Type, duration, err)
-	} else {
-		fmt.Printf("[logging] job=%s type=%s completed in %v\n", j.ID, j.Type, duration)
+		fmt.Printf("[logging] job=%s type=%s failed: %v\n", j.ID, j.Type, err)
 	}
-
-	return nil
+	return err
 }
