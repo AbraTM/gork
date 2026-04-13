@@ -7,10 +7,9 @@ linters:
     - staticcheck
     - unused
     - misspell
-
-linters-settings:
-  misspell:
-    locale: US
+  settings:
+    misspell:
+      locale: US
 
 formatters:
   enable: 
