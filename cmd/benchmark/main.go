@@ -1,0 +1,147 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/AbraTM/gork/internal/engine"
+	"github.com/AbraTM/gork/internal/job"
+)
+
+const (
+	totalJobs  = 200
+	jobLatency = 500 * time.Millisecond
+)
+
+type BenchmarkConfig struct {
+	name    string
+	factory func() engine.Config
+}
+
+var benchmarks = []BenchmarkConfig{
+	{
+		name: "Synchronous (1 worker, no scaling)",
+		factory: func() engine.Config {
+			return engine.Config{
+				IntitalWorkers: 1,
+				QueueSize:      1000,
+				ScalerConfig: engine.AutoScalerConfig{
+					MaxWorkers:     1,
+					MinWorkers:     1,
+					ScaleUpAt:      99999,
+					ScaleDownAt:    0,
+					EvalInterval:   1 * time.Second,
+					CooldownPeriod: 1 * time.Second,
+				},
+			}
+		},
+	},
+	{
+		name: "Fixed Pool (5 workers, no scaling)",
+		factory: func() engine.Config {
+			return engine.Config{
+				IntitalWorkers: 5,
+				QueueSize:      1000,
+				ScalerConfig: engine.AutoScalerConfig{
+					MaxWorkers:     5,
+					MinWorkers:     5,
+					ScaleUpAt:      99999,
+					ScaleDownAt:    0,
+					EvalInterval:   1 * time.Second,
+					CooldownPeriod: 1 * time.Second,
+				},
+			}
+		},
+	},
+	{
+		name: "AutoScaler (1→20 workers, HPA-style)",
+		factory: func() engine.Config {
+			return engine.Config{
+				IntitalWorkers: 1,
+				QueueSize:      1000,
+				ScalerConfig: engine.AutoScalerConfig{
+					MaxWorkers:     20,
+					MinWorkers:     1,
+					ScaleUpAt:      10,
+					ScaleDownAt:    2,
+					EvalInterval:   500 * time.Millisecond,
+					CooldownPeriod: 1 * time.Second,
+				},
+			}
+		},
+	},
+}
+
+type EmailHanlder struct{}
+
+func (*EmailHanlder) Handle(ctx context.Context, j job.Job) error {
+	time.Sleep(jobLatency)
+	return nil
+}
+
+type result struct {
+	name       string
+	elapsed    time.Duration
+	throughput float64
+}
+
+func run(cfg BenchmarkConfig) result {
+	fmt.Println("=========================================")
+	fmt.Printf("%-10s\n", cfg.name)
+	fmt.Println("=========================================")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	e := engine.NewEngine(cfg.factory())
+	e.Register("email", &EmailHanlder{})
+	e.Start(ctx)
+
+	start := time.Now()
+
+	for i := range totalJobs {
+		e.Publish(ctx, job.Job{
+			ID:        fmt.Sprintf("job-%d", i),
+			Type:      "email",
+			Payload:   fmt.Appendf(make([]byte, 0, 32), "user%d@somemail.com", i),
+			CreatedAt: time.Now(),
+		})
+	}
+
+	for e.QueueLen() > 0 {
+		time.Sleep(100 * time.Millisecond)
+	}
+	time.Sleep(jobLatency + 100*time.Millisecond)
+	e.Stop()
+
+	elapsed := time.Since(start)
+	throughput := float64(totalJobs) / elapsed.Seconds()
+	fmt.Printf("[benchmark] completed in %v\n", elapsed)
+	fmt.Printf("[benchmark] throughput: %.1f jobs/sec\n", throughput)
+
+	return result{
+		name:       cfg.name,
+		elapsed:    elapsed,
+		throughput: throughput,
+	}
+}
+
+func main() {
+	fmt.Println("***** gork benchmarking *****")
+	fmt.Printf("Jobs: %d | Job Latency: %v\n", totalJobs, jobLatency)
+
+	results := make([]result, 0, len(benchmarks))
+
+	for _, cfg := range benchmarks {
+		results = append(results, run(cfg))
+	}
+
+	// Summary Table
+	fmt.Println("\n======= SUMMARY ========")
+	fmt.Printf("%-40s %-12s %-12s\n", "Config", "Time", "Jobs/sec")
+	fmt.Println("-----------------------------------------------------------")
+	for _, r := range results {
+		fmt.Printf("%-40s %-12v %-12.1f\n", r.name, r.elapsed.Round(time.Millisecond), r.throughput)
+	}
+}
