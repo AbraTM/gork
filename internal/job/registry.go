@@ -33,7 +33,7 @@ func (r *Registry) Get(jobType string) (Handler, error) {
 
 	h, ok := r.handlers[jobType]
 	if !ok {
-		return nil, fmt.Errorf("no handler registerd for job type %q", jobType)
+		return nil, fmt.Errorf("no handler registered for job type %q", jobType)
 	}
 	return h, nil
 }

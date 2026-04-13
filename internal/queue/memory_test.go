@@ -2,6 +2,7 @@ package queue_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -48,8 +49,10 @@ func TestInMemoryQueue_Publish_Context_Close(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	for i := 0; i < testQueueSize; i++ {
-		mq.Publish(ctx, newTestJob())
+	for range testQueueSize {
+		if err := mq.Publish(ctx, newTestJob()); err != nil {
+			fmt.Printf("error publishing job, %v\n", err)
+		}
 	}
 
 	cancel()

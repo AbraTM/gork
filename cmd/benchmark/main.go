@@ -101,12 +101,16 @@ func run(cfg BenchmarkConfig) result {
 	start := time.Now()
 
 	for i := range totalJobs {
-		e.Publish(ctx, job.Job{
+		err := e.Publish(ctx, job.Job{
 			ID:        fmt.Sprintf("job-%d", i),
 			Type:      "email",
 			Payload:   fmt.Appendf(make([]byte, 0, 32), "user%d@somemail.com", i),
 			CreatedAt: time.Now(),
 		})
+
+		if err != nil {
+			fmt.Printf("error while publishing, %v\n", err)
+		}
 	}
 
 	for e.QueueLen() > 0 {

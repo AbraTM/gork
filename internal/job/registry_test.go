@@ -63,7 +63,7 @@ func TestRegistry_Get(t *testing.T) {
 			wantErr:    false,
 		},
 		{
-			name:       "return error for unkown type",
+			name:       "return error for unknown type",
 			registerAs: "email",
 			getAs:      "invoice",
 			wantErr:    true,
