@@ -20,4 +20,17 @@ jobs:
           cache: true
 
       - name: Run benchmark
-        run: go run cmd/benchmark/main.go
+        run: go run cmd/benchmark/main.go | tee benchmark-results.txt
+
+      - name: Write job summary
+        run: | 
+          echo "## Benchmark Results" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat benchmark-results.text >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with: 
+          name: benchmark-results
+          path: benchmark-results.txt
