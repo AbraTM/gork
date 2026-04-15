@@ -68,7 +68,7 @@ func (as *AutoScaler) evaluate(ctx context.Context) {
 		ratio := float64(currQueue) / float64(as.config.ScaleUpAt)
 		scaleTo := min(int(math.Ceil(float64(currWorkers)*ratio)), as.config.MaxWorkers)
 		fmt.Printf("[autoscaler] scaling up workers from %d workers -> %d workers\n", currWorkers, scaleTo)
-		as.pool.Scale(ctx, scaleTo)
+		as.pool.Scale(scaleTo)
 		as.lastScaledAt = time.Now()
 		return
 	}
@@ -78,7 +78,7 @@ func (as *AutoScaler) evaluate(ctx context.Context) {
 		ratio := float64(currQueue) / float64(as.config.ScaleDownAt)
 		scaleTo := max(int(math.Ceil(float64(currWorkers)*ratio)), as.config.MinWorkers)
 		fmt.Printf("[autoscaler] scaling down workers from %d workers -> %d workers\n", currWorkers, scaleTo)
-		as.pool.Scale(ctx, scaleTo)
+		as.pool.Scale(scaleTo)
 		as.lastScaledAt = time.Now()
 		return
 	}
