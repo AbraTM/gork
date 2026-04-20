@@ -59,7 +59,10 @@ func (e *Engine) Stop() {
 }
 
 func (e *Engine) QueueLen() int {
-	fmt.Printf("[engine] queue length: %d\n", e.queue.Len())
+	// fmt.Printf("[engine] queue length: %d\n", e.queue.Len())
 	return e.queue.Len()
+}
 
+func (e *Engine) WorkerCount() int {
+	return e.pool.WorkerCount()
 }

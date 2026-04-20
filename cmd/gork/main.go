@@ -1,60 +1,34 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	"time"
-
-	"github.com/AbraTM/gork/internal/engine"
-	"github.com/AbraTM/gork/internal/job"
+	"os"
 )
 
-type EmailHanlder struct{}
-
-func (*EmailHanlder) Handle(ctx context.Context, job job.Job) error {
-	fmt.Printf("[email] sending email to %s\n", string(job.Payload))
-	time.Sleep(500 * time.Millisecond)
-	return nil
+func printUsage() {
+	fmt.Println("******* gork *******")
+	fmt.Println("usage: gork <command>")
+	fmt.Println("\ncommands:")
+	fmt.Printf("  %-10s %s\n", "run", "start the engine")
+	fmt.Printf("  %-10s %s\n", "enqueue", "publish a job")
+	fmt.Printf("  %-10s %s\n", "stats", "show engine stats")
 }
 
 func main() {
-	fmt.Println("***** gork *****")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	e := engine.NewEngine(engine.Config{
-		IntitalWorkers: 1,
-		QueueSize:      1000,
-		ScalerConfig: engine.AutoScalerConfig{
-			MaxWorkers:     20,
-			MinWorkers:     1,
-			ScaleUpAt:      10,
-			ScaleDownAt:    2,
-			EvalInterval:   500 * time.Millisecond,
-			CooldownPeriod: 1 * time.Second,
-		},
-	})
-
-	e.Register("email", &EmailHanlder{})
-	e.Start(ctx)
-
-	for i := 0; i <= 200; i++ {
-		err := e.Publish(ctx, job.Job{
-			ID:        fmt.Sprintf("job-%d", i),
-			Type:      "email",
-			Payload:   fmt.Appendf(make([]byte, 0, 32), "user%d@somemail.com", i),
-			CreatedAt: time.Now(),
-		})
-
-		if err != nil {
-			fmt.Printf("error while publishing, %v\n", err)
-		}
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
 	}
 
-	for e.QueueLen() > 0 {
-		time.Sleep(100 * time.Millisecond)
+	switch os.Args[1] {
+	case "run":
+		runCmd()
+	case "enqueue":
+		enqueueCmd()
+	case "stats":
+		showStatsCmd()
+	default:
+		fmt.Printf("unknown command: %s\n", os.Args[1])
+		os.Exit(1)
 	}
-	time.Sleep(600 * time.Millisecond)
-	e.Stop()
 }
