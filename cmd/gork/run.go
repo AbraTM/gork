@@ -28,7 +28,7 @@ func (eh *emailHandler) Handle(ctx context.Context, j job.Job) error {
 type invoiceHandler struct{}
 
 func (eh *invoiceHandler) Handle(ctx context.Context, j job.Job) error {
-	fmt.Println("[invoice] processing payload %s\n", string(j.Payload))
+	fmt.Printf("[invoice] processing payload %s\n", string(j.Payload))
 	time.Sleep(200 * time.Millisecond)
 	return nil
 }

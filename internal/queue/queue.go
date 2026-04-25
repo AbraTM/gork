@@ -7,6 +7,6 @@ import (
 
 type Queue interface {
 	Publish(ctx context.Context, j job.Job) error
-	Consume(ctx context.Context) (<-chan job.Job, error)
+	Consume(ctx context.Context) (<-chan job.Message, error)
 	Len() int
 }

@@ -2,7 +2,6 @@ package queue_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -51,7 +50,7 @@ func TestInMemoryQueue_Publish_Context_Close(t *testing.T) {
 
 	for range testQueueSize {
 		if err := mq.Publish(ctx, newTestJob()); err != nil {
-			fmt.Printf("error publishing job, %v\n", err)
+			t.Fatalf("error publishing job, %v\n", err)
 		}
 	}
 
@@ -63,18 +62,18 @@ func TestInMemoryQueue_Publish_Context_Close(t *testing.T) {
 	}
 }
 
-func TestInMemoryQueue_Consume_Returns_Jobs_Channel(t *testing.T) {
+func TestInMemoryQueue_Consume_Returns_Message_Channel(t *testing.T) {
 	mq := queue.NewInMemoryQueue(testQueueSize)
 
 	ctx := context.Background()
-	jobsChan, err := mq.Consume(ctx)
+	messagesChan, err := mq.Consume(ctx)
 
 	if err != nil {
 		t.Fatalf("unexpected error, %v\n", err)
 	}
 
-	if jobsChan == nil {
-		t.Fatal("expected jobs channel, got nil")
+	if messagesChan == nil {
+		t.Fatal("expected messages channel, got nil")
 	}
 }
 
@@ -87,17 +86,42 @@ func TestInMemoryQueue_Consume_Returns_Jobs(t *testing.T) {
 		t.Fatalf("unexpected error while publishing, %v\n", publishErr)
 	}
 
-	jobsChan, consumeErr := mq.Consume(ctx)
+	messagesChan, consumeErr := mq.Consume(ctx)
 	if consumeErr != nil {
 		t.Fatalf("unexpected error while consuming, %v\n", consumeErr)
 	}
 
 	select {
-	case j := <-jobsChan:
-		if j.ID != testJob.ID {
+	case m := <-messagesChan:
+		if m.Job.ID != testJob.ID {
 			t.Fatal("received an unexpected job")
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for job")
+	}
+}
+
+func TestNewInMemoryQueue_Message_Ack_Nack(t *testing.T) {
+	mq := queue.NewInMemoryQueue(testQueueSize)
+	ctx := context.Background()
+
+	if err := mq.Publish(ctx, newTestJob()); err != nil {
+		t.Fatalf("unexpected error while publishing %v\n", err)
+	}
+
+	messagesChan, _ := mq.Consume(ctx)
+	m := <-messagesChan
+
+	if err := m.Ack(); err != nil {
+		t.Fatalf("expected nil from Ack got %v", err)
+	}
+
+	if err := mq.Publish(ctx, newTestJob()); err != nil {
+		t.Fatalf("unexpected error while publishing %v\n", err)
+	}
+	m = <-messagesChan
+
+	if err := m.Nack(); err != nil {
+		t.Fatalf("expected nil from Nack, got %v", err)
 	}
 }
