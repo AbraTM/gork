@@ -1,7 +1,9 @@
 package server
 
 import (
+	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -19,6 +21,12 @@ type statsResponse struct {
 	WorkerCount int `json:"worker_count"`
 }
 
+func generateID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
+
 func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 	var req publishRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -31,8 +39,13 @@ func (s *Server) handlePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	id := req.ID
+	if id == "" {
+		id = generateID()
+	}
+
 	j := job.Job{
-		ID:        req.ID,
+		ID:        id,
 		Type:      req.Type,
 		Payload:   []byte(req.Payload),
 		CreatedAt: time.Now(),

@@ -24,6 +24,14 @@ type Config struct {
 
 func NewEngine(c Config) *Engine {
 	q := queue.NewInMemoryQueue(c.QueueSize)
+	return newEngine(q, c)
+}
+
+func NewEngineWithQueue(q queue.Queue, c Config) *Engine {
+	return newEngine(q, c)
+}
+
+func newEngine(q queue.Queue, c Config) *Engine {
 	r := job.NewRegistry()
 	p := NewPool(r, q)
 	as := NewAutoScaler(p, q, &c.ScalerConfig)

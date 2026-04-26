@@ -2,8 +2,16 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 )
+
+func initLogger() {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
+	slog.SetDefault(logger)
+}
 
 func printUsage() {
 	fmt.Println("******* gork *******")
@@ -15,6 +23,8 @@ func printUsage() {
 }
 
 func main() {
+	initLogger()
+
 	if len(os.Args) < 2 {
 		printUsage()
 		os.Exit(1)

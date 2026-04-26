@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/AbraTM/gork/internal/engine"
 	"github.com/AbraTM/gork/internal/job"
+	"github.com/AbraTM/gork/internal/queue/rabbitmq"
 	"github.com/AbraTM/gork/internal/server"
 )
 
@@ -37,7 +39,21 @@ func runCmd() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	e := engine.NewEngine(engine.Config{
+	q, err := rabbitmq.NewRabbitMQQueue(
+		"amqp://guest:guest@localhost:5672/",
+		"gork.jobs",
+	)
+	if err != nil {
+		slog.Error("failed to connect to RabbitMQ", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		if err := q.Close(); err != nil {
+			slog.Error("failed to close rabbitmq queue", "error", err)
+		}
+	}()
+
+	e := engine.NewEngineWithQueue(q, engine.Config{
 		IntitalWorkers: 2,
 		QueueSize:      1000,
 		ScalerConfig: engine.AutoScalerConfig{
