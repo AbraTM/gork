@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"sync"
 
 	"github.com/AbraTM/gork/internal/job"
 	"github.com/AbraTM/gork/internal/queue"
@@ -12,11 +14,13 @@ import (
 )
 
 type RabbitMQQueue struct {
-	conn        *amqp.Connection
-	publishChan *amqp.Channel
-	consumeChan *amqp.Channel
-	inspectChan *amqp.Channel
-	queueName   string
+	conn          *amqp.Connection
+	publishChan   *amqp.Channel
+	publishMu     sync.Mutex
+	queueName     string
+	managementURL string
+	lastLen       int
+	lastLenMu     sync.RWMutex
 }
 
 var _ queue.Queue = (*RabbitMQQueue)(nil)
@@ -24,6 +28,10 @@ var _ queue.Queue = (*RabbitMQQueue)(nil)
 type closer struct {
 	name string
 	fn   func() error
+}
+
+type queueStats struct {
+	Messages int `json:"messages"`
 }
 
 func closeAll(closers ...closer) {
@@ -37,12 +45,12 @@ func closeAll(closers ...closer) {
 	}
 }
 
-func NewRabbitMQQueue(url, queueName string) (*RabbitMQQueue, error) {
-	conn, err := amqp.Dial(url)
+func NewRabbitMQQueue(amqpURL, managementURL, queueName string) (*RabbitMQQueue, error) {
+	conn, err := amqp.Dial(amqpURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to RabbitMQ: %w", err)
 	}
-	slog.Info("connected to RabbitMQ", "url", url)
+	slog.Info("connected to RabbitMQ", "url", amqpURL)
 
 	publishChan, err := conn.Channel()
 	if err != nil {
@@ -52,58 +60,31 @@ func NewRabbitMQQueue(url, queueName string) (*RabbitMQQueue, error) {
 		return nil, fmt.Errorf("failed to open publish channel: %w", err)
 	}
 
-	consumeChan, err := conn.Channel()
-	if err != nil {
-		closeAll(
-			closer{"connection", conn.Close},
-			closer{"publish_channel", publishChan.Close},
-		)
-		return nil, fmt.Errorf("failed to open consume channel: %w", err)
-	}
-
-	inspectChan, err := conn.Channel()
-	if err != nil {
-		closeAll(
-			closer{"connection", conn.Close},
-			closer{"publish_channel", publishChan.Close},
-			closer{"consume_channel", consumeChan.Close},
-		)
-		return nil, fmt.Errorf("failed to open inspect channel: %w", err)
-	}
-
 	_, err = publishChan.QueueDeclare(
 		queueName,
 		true, false, false, false, nil,
 	)
+
 	if err != nil {
 		closeAll(
 			closer{"connection", conn.Close},
 			closer{"publish_channel", publishChan.Close},
-			closer{"consume_channel", consumeChan.Close},
-			closer{"inspect_channel", inspectChan.Close},
 		)
 		return nil, fmt.Errorf("failed to declare queue %q: %w", queueName, err)
 	}
 	slog.Info("queue declared", "queue", queueName)
 
 	return &RabbitMQQueue{
-		conn:        conn,
-		publishChan: publishChan,
-		consumeChan: consumeChan,
-		inspectChan: inspectChan,
-		queueName:   queueName,
+		conn:          conn,
+		publishChan:   publishChan,
+		queueName:     queueName,
+		managementURL: managementURL,
 	}, nil
 }
 
 func (q *RabbitMQQueue) Close() error {
 	if err := q.publishChan.Close(); err != nil {
 		return fmt.Errorf("failed to close publish channel: %w", err)
-	}
-	if err := q.consumeChan.Close(); err != nil {
-		return fmt.Errorf("failed to close consume channel: %w", err)
-	}
-	if err := q.inspectChan.Close(); err != nil {
-		return fmt.Errorf("failed to close inspect channel: %w", err)
 	}
 	if err := q.conn.Close(); err != nil {
 		return fmt.Errorf("failed to close connection: %w", err)
@@ -118,6 +99,8 @@ func (q *RabbitMQQueue) Publish(ctx context.Context, j job.Job) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal json: %w", err)
 	}
+	q.publishMu.Lock()
+	defer q.publishMu.Unlock()
 
 	err = q.publishChan.PublishWithContext(
 		ctx, "", q.queueName, false, false,
@@ -136,10 +119,25 @@ func (q *RabbitMQQueue) Publish(ctx context.Context, j job.Job) error {
 }
 
 func (q *RabbitMQQueue) Consume(ctx context.Context) (<-chan job.Message, error) {
-	deliveries, err := q.consumeChan.Consume(
+	ch, err := q.conn.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open consumer channel: %w", err)
+	}
+
+	if err := ch.Qos(1, 0, false); err != nil {
+		if closeErr := ch.Close(); closeErr != nil {
+			slog.Warn("faile to close channel", "error", closeErr)
+		}
+		return nil, fmt.Errorf("failed to set QoS: %w", err)
+	}
+
+	deliveries, err := ch.Consume(
 		q.queueName, "", false, false, false, false, nil,
 	)
 	if err != nil {
+		if closeErr := ch.Close(); closeErr != nil {
+			slog.Warn("faile to close channel", "error", closeErr)
+		}
 		return nil, fmt.Errorf("failed to start consuming: %w", err)
 	}
 
@@ -181,13 +179,32 @@ func (q *RabbitMQQueue) Consume(ctx context.Context) (<-chan job.Message, error)
 }
 
 func (q *RabbitMQQueue) Len() int {
-	queue, err := q.inspectChan.QueueDeclarePassive(
-		q.queueName,
-		true, false, false, false, nil,
-	)
+	url := fmt.Sprintf("%s/api/queues/%%2F/%s", q.managementURL, q.queueName)
+
+	resp, err := http.Get(url)
 	if err != nil {
-		slog.Warn("failed to inspect queue", "error", err)
-		return 0
+		slog.Warn("failed to query management API", "error", err)
+		q.lastLenMu.RLock()
+		defer q.lastLenMu.RUnlock()
+		return q.lastLen
 	}
-	return queue.Messages
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Warn("failed to close response body", "error", err)
+		}
+	}()
+
+	var stats queueStats
+	if err := json.NewDecoder(resp.Body).Decode(&stats); err != nil {
+		slog.Warn("failed to decode queue stats", "error", err)
+		q.lastLenMu.RLock()
+		defer q.lastLenMu.RUnlock()
+		return q.lastLen
+	}
+
+	q.lastLenMu.Lock()
+	q.lastLen = stats.Messages
+	q.lastLenMu.Unlock()
+
+	return stats.Messages
 }

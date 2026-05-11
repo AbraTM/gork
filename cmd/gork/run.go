@@ -41,6 +41,7 @@ func runCmd() {
 
 	q, err := rabbitmq.NewRabbitMQQueue(
 		"amqp://guest:guest@localhost:5672/",
+		"http://guest:guest@127.0.0.1:15672",
 		"gork.jobs",
 	)
 	if err != nil {
